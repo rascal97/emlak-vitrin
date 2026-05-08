@@ -399,7 +399,7 @@
       </button>
       <div style="display:flex;gap:10px;margin-left:auto">
         <button class="adm-btn" onclick="showList()" style="background:#e2e8f0;color:var(--text)">İptal</button>
-        <button class="adm-btn adm-btn-primary" onclick="saveIlan()" style="font-size:15px;padding:10px 28px">💾 Kaydet</button>
+        <button class="adm-btn adm-btn-primary" onclick="saveIlan()" id="btn-save-form" style="font-size:15px;padding:10px 28px">💾 Kaydet</button>
       </div>
     </div>
   </div>
@@ -460,6 +460,11 @@ function init() {
 }
 
 function loadData() {
+  if (!IS_LOCAL) {
+    // Railway: her zaman sunucudaki güncel ilanlar.js'den oku
+    data = deepCopy(ILANLAR);
+    return;
+  }
   const stored = localStorage.getItem("emlak_ilanlar");
   if (stored) {
     try { data = JSON.parse(stored); } catch(e) { data = deepCopy(ILANLAR); }
@@ -603,7 +608,7 @@ function fillForm(ilan) {
 }
 
 // ---- SAVE ----
-function saveIlan() {
+async function saveIlan() {
   const baslik = document.getElementById("f-baslik").value.trim();
   if (!baslik) { showToast("⚠️ İlan başlığı zorunludur."); return; }
 
@@ -652,14 +657,18 @@ function saveIlan() {
   if (editingId !== null) {
     const idx = data.findIndex(i => i.id === editingId);
     if (idx !== -1) data[idx] = ilan; else data.push(ilan);
-    showToast("✅ İlan güncellendi!");
   } else {
     data.push(ilan);
-    showToast("✅ Yeni ilan eklendi!");
   }
 
   saveData();
   showList();
+
+  if (!IS_LOCAL) {
+    await publishIlanlar();
+  } else {
+    showToast(editingId !== null ? "✅ İlan güncellendi!" : "✅ Yeni ilan eklendi!");
+  }
 }
 
 function nextId() {
@@ -667,19 +676,23 @@ function nextId() {
 }
 
 // ---- DELETE ----
-function confirmDelete(id) {
+async function confirmDelete(id) {
   const ilan = data.find(i => i.id === id);
   if (!ilan) return;
   if (confirm(`"${ilan.baslik}" ilanını silmek istediğinize emin misiniz?`)) {
     data = data.filter(i => i.id !== id);
     saveData();
-    showToast("🗑️ İlan silindi.");
     showList();
+    if (!IS_LOCAL) {
+      await publishIlanlar();
+    } else {
+      showToast("🗑️ İlan silindi.");
+    }
   }
 }
 
-function deleteCurrentIlan() {
-  if (editingId !== null) confirmDelete(editingId);
+async function deleteCurrentIlan() {
+  if (editingId !== null) await confirmDelete(editingId);
 }
 
 // ---- PHOTOS ----
@@ -742,9 +755,8 @@ function autoFiyatText() {
 // ---- PUBLISH → GitHub → Railway auto-deploy ----
 async function publishIlanlar() {
   const btn = document.getElementById('btn-publish');
-  const orig = btn.textContent;
-  btn.textContent = '⏳ Yayınlanıyor...';
-  btn.disabled = true;
+  if (btn) { btn.textContent = '⏳ Yayınlanıyor...'; btn.disabled = true; }
+  showToast('⏳ Site güncelleniyor...');
   try {
     const res  = await fetch('/api/save', {
       method: 'POST',
@@ -752,12 +764,11 @@ async function publishIlanlar() {
       body: JSON.stringify({ config: CONFIG, ilanlar: data })
     });
     const json = await res.json();
-    showToast(json.ok ? '🚀 ' + json.msg : '❌ ' + json.msg);
+    showToast(json.ok ? '✅ ' + json.msg : '❌ ' + json.msg);
   } catch (e) {
     showToast('❌ Bağlantı hatası: ' + e.message);
   }
-  btn.textContent = orig;
-  btn.disabled = false;
+  if (btn) { btn.textContent = '🚀 Yayınla'; btn.disabled = false; }
 }
 
 // ---- DOWNLOAD ilanlar.js ----
@@ -800,6 +811,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("panel").style.display = "block";
     document.getElementById("btn-download").style.display = "none";
     document.getElementById("btn-publish").style.display  = "inline-flex";
+    document.getElementById("btn-save-form").textContent  = "💾 Kaydet ve Yayınla";
     init();
   } else if (sessionStorage.getItem("emlak_admin") === "1") {
     document.getElementById("pw-screen").style.display = "none";
