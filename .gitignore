@@ -1,0 +1,4 @@
+node_modules/
+
+# Admin paneli lokalde kalır, internete çıkmaz
+admin.html
